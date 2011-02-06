@@ -681,6 +681,7 @@ do_standby_clone(void)
 		/* Trouble accessing directory */
 		fprintf(stderr, _("%s: could not access directory \"%s\": %s\n"),
 		        progname, dest_dir, strerror(errno));
+		exit(1);
 	}
 
 	/* Connection parameters for master only */
