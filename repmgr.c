@@ -348,7 +348,7 @@ do_master_register(void)
 	{
 		if (!force)					/* and we are not forcing so error */
 		{
-			fprintf(stderr, "Schema repmgr_%s already exists.", myClusterName);
+			fprintf(stderr, "Schema repmgr_%s already exists.\n", myClusterName);
 			PQclear(res);
 			PQfinish(conn);
 			exit(1);
@@ -426,7 +426,7 @@ do_master_register(void)
 		if (master_conn != NULL)
 		{
 			PQfinish(master_conn);
-			fprintf(stderr, "There is a master already in this cluster");
+			fprintf(stderr, "There is a master already in this cluster.\n");
 			exit(1);
 		}
 	}
@@ -522,9 +522,9 @@ do_standby_register(void)
 		exit(1);
 	}
 
-	if (PQntuples(res) == 0)		/* schema doesn't exists */
+	if (PQntuples(res) == 0)		/* schema doesn't exist */
 	{
-		fprintf(stderr, "Schema repmgr_%s doesn't exists.", myClusterName);
+		fprintf(stderr, "Schema repmgr_%s doesn't exist.\n", myClusterName);
 		PQclear(res);
 		PQfinish(conn);
 		exit(1);
@@ -725,7 +725,7 @@ do_standby_clone(void)
 	if (!guc_setted(conn, "wal_keep_segments", ">=", wal_keep_segments))
 	{
 		PQfinish(conn);
-		fprintf(stderr, _("%s needs parameter 'wal_keep_segments' to be set to %s or greater\n"), wal_keep_segments, progname);
+		fprintf(stderr, _("%s needs parameter 'wal_keep_segments' to be set to %s or greater\n"), progname, wal_keep_segments);
 		exit(1);
 	}
 	if (!guc_setted(conn, "archive_mode", "=", "on"))
