@@ -322,7 +322,7 @@ do_master_register(void)
 	{
 		PQfinish(conn);
 		fprintf(stderr, _("%s needs master to be PostgreSQL 9.0 or better\n"), progname);
-		return;
+		exit(1);
 	}
 
 	/* Check we are a master */
@@ -330,7 +330,7 @@ do_master_register(void)
 	{
 		fprintf(stderr, "repmgr: This node should be a master\n");
 		PQfinish(conn);
-		return;
+		exit(1);
 	}
 
 	/* Check if there is a schema for this cluster */
@@ -341,7 +341,7 @@ do_master_register(void)
 		fprintf(stderr, "Can't get info about schemas: %s\n", PQerrorMessage(conn));
 		PQclear(res);
 		PQfinish(conn);
-		return;
+		exit(1);
 	}
 
 	if (PQntuples(res) > 0)			/* schema exists */
@@ -351,7 +351,7 @@ do_master_register(void)
 			fprintf(stderr, "Schema repmgr_%s already exists.", myClusterName);
 			PQclear(res);
 			PQfinish(conn);
-			return;
+			exit(1);
 		}
 		schema_exists = true;
 	}
@@ -366,7 +366,7 @@ do_master_register(void)
 			fprintf(stderr, "Cannot create the schema repmgr_%s: %s\n",
 			        myClusterName, PQerrorMessage(conn));
 			PQfinish(conn);
-			return;
+			exit(1);
 		}
 
 		/* ... the tables */
@@ -379,7 +379,7 @@ do_master_register(void)
 			fprintf(stderr, "Cannot create the table repmgr_%s.repl_nodes: %s\n",
 			        myClusterName, PQerrorMessage(conn));
 			PQfinish(conn);
-			return;
+			exit(1);
 		}
 
 		sprintf(sqlquery, "CREATE TABLE repmgr_%s.repl_monitor ( "
@@ -395,7 +395,7 @@ do_master_register(void)
 			fprintf(stderr, "Cannot create the table repmgr_%s.repl_monitor: %s\n",
 			        myClusterName, PQerrorMessage(conn));
 			PQfinish(conn);
-			return;
+			exit(1);
 		}
 
 		/* and the view */
@@ -413,7 +413,7 @@ do_master_register(void)
 			fprintf(stderr, "Cannot create the view repmgr_%s.repl_status: %s\n",
 			        myClusterName, PQerrorMessage(conn));
 			PQfinish(conn);
-			return;
+			exit(1);
 		}
 	}
 	else
@@ -427,7 +427,7 @@ do_master_register(void)
 		{
 			PQfinish(master_conn);
 			fprintf(stderr, "There is a master already in this cluster");
-			return;
+			exit(1);
 		}
 	}
 
@@ -443,7 +443,7 @@ do_master_register(void)
 			fprintf(stderr, "Cannot delete node details, %s\n",
 			        PQerrorMessage(conn));
 			PQfinish(conn);
-			return;
+			exit(1);
 		}
 	}
 
@@ -456,7 +456,7 @@ do_master_register(void)
 		fprintf(stderr, "Cannot insert node details, %s\n",
 		        PQerrorMessage(conn));
 		PQfinish(conn);
-		return;
+		exit(1);
 	}
 
 	PQfinish(conn);
@@ -500,7 +500,7 @@ do_standby_register(void)
 	{
 		PQfinish(conn);
 		fprintf(stderr, _("%s needs standby to be PostgreSQL 9.0 or better\n"), progname);
-		return;
+		exit(1);
 	}
 
 	/* Check we are a standby */
@@ -508,7 +508,7 @@ do_standby_register(void)
 	{
 		fprintf(stderr, "repmgr: This node should be a standby\n");
 		PQfinish(conn);
-		return;
+		exit(1);
 	}
 
 	/* Check if there is a schema for this cluster */
@@ -519,7 +519,7 @@ do_standby_register(void)
 		fprintf(stderr, "Can't get info about tablespaces: %s\n", PQerrorMessage(conn));
 		PQclear(res);
 		PQfinish(conn);
-		return;
+		exit(1);
 	}
 
 	if (PQntuples(res) == 0)		/* schema doesn't exists */
@@ -527,14 +527,16 @@ do_standby_register(void)
 		fprintf(stderr, "Schema repmgr_%s doesn't exists.", myClusterName);
 		PQclear(res);
 		PQfinish(conn);
-		return;
+		exit(1);
 	}
 	PQclear(res);
 
 	/* check if there is a master in this cluster */
 	master_conn = getMasterConnection(conn, myLocalId, myClusterName, &master_id);
-	if (!master_conn)
-		return;
+	if (!master_conn) {
+		fprintf(stderr, "repmgr: a master must be defined before configuring a slave.\n");
+		exit(1);
+	}
 
 	/* master should be v9 or better */
 	pg_version(master_conn, master_version);
@@ -543,7 +545,7 @@ do_standby_register(void)
 		PQfinish(conn);
 		PQfinish(master_conn);
 		fprintf(stderr, _("%s needs master to be PostgreSQL 9.0 or better\n"), progname);
-		return;
+		exit(1);
 	}
 
 	/* master and standby version should match */
@@ -553,7 +555,7 @@ do_standby_register(void)
 		PQfinish(master_conn);
 		fprintf(stderr, _("%s needs versions of both master (%s) and standby (%s) to match.\n"),
 		        progname, master_version, standby_version);
-		return;
+		exit(1);
 	}
 
 
@@ -570,7 +572,7 @@ do_standby_register(void)
 			        PQerrorMessage(master_conn));
 			PQfinish(master_conn);
 			PQfinish(conn);
-			return;
+			exit(1);
 		}
 	}
 
@@ -584,7 +586,7 @@ do_standby_register(void)
 		        PQerrorMessage(master_conn));
 		PQfinish(master_conn);
 		PQfinish(conn);
-		return;
+		exit(1);
 	}
 
 	PQfinish(master_conn);
@@ -636,7 +638,7 @@ do_standby_clone(void)
 		{
 			fprintf(stderr, _("%s: couldn't create directory %s ... "),
 			        progname, dest_dir);
-			return;
+			exit(1);
 		}
 		break;
 	case 1:
@@ -650,7 +652,7 @@ do_standby_clone(void)
 		{
 			fprintf(stderr, _("%s: could not change permissions of directory \"%s\": %s\n"),
 			        progname, dest_dir, strerror(errno));
-			return;
+			exit(1);
 		}
 		break;
 	case 2:
@@ -666,7 +668,7 @@ do_standby_clone(void)
 			                  "If you are sure you want to clone here, "
 			                  "please check there is no PostgreSQL server "
 			                  "running and use the --force option\n"));
-			return;
+			exit(1);
 		}
 		else if (pg_dir && force)
 		{
@@ -693,7 +695,7 @@ do_standby_clone(void)
 	{
 		fprintf(stderr, _("%s: could not connect to master\n"),
 		        progname);
-		return;
+		exit(1);
 	}
 
 	/* primary should be v9 or better */
@@ -702,7 +704,7 @@ do_standby_clone(void)
 	{
 		PQfinish(conn);
 		fprintf(stderr, _("%s needs master to be PostgreSQL 9.0 or better\n"), progname);
-		return;
+		exit(1);
 	}
 
 	/* Check we are cloning a primary node */
@@ -710,7 +712,7 @@ do_standby_clone(void)
 	{
 		PQfinish(conn);
 		fprintf(stderr, "\nThe command should clone a primary node\n");
-		return;
+		exit(1);
 	}
 
 	/* And check if it is well configured */
@@ -718,19 +720,19 @@ do_standby_clone(void)
 	{
 		PQfinish(conn);
 		fprintf(stderr, _("%s needs parameter 'wal_level' to be set to 'hot_standby'\n"), progname);
-		return;
+		exit(1);
 	}
 	if (!guc_setted(conn, "wal_keep_segments", ">=", wal_keep_segments))
 	{
 		PQfinish(conn);
 		fprintf(stderr, _("%s needs parameter 'wal_keep_segments' to be set to %s or greater\n"), wal_keep_segments, progname);
-		return;
+		exit(1);
 	}
 	if (!guc_setted(conn, "archive_mode", "=", "on"))
 	{
 		PQfinish(conn);
 		fprintf(stderr, _("%s needs parameter 'archive_mode' to be set to 'on'\n"), progname);
-		return;
+		exit(1);
 	}
 
 	if (verbose)
@@ -744,7 +746,7 @@ do_standby_clone(void)
 		fprintf(stderr, "Can't get info about tablespaces: %s\n", PQerrorMessage(conn));
 		PQclear(res);
 		PQfinish(conn);
-		return;
+		exit(1);
 	}
 	for (i = 0; i < PQntuples(res); i++)
 	{
@@ -766,7 +768,7 @@ do_standby_clone(void)
 				        progname, tblspc_dir);
 				PQclear(res);
 				PQfinish(conn);
-				return;
+				exit(1);
 			}
 			break;
 		case 1:
@@ -782,7 +784,7 @@ do_standby_clone(void)
 				        progname, tblspc_dir, strerror(errno));
 				PQclear(res);
 				PQfinish(conn);
-				return;
+				exit(1);
 			}
 			break;
 		case 2:
@@ -794,7 +796,7 @@ do_standby_clone(void)
 				        progname, tblspc_dir);
 				PQclear(res);
 				PQfinish(conn);
-				return;
+				exit(1);
 			}
 		default:
 			/* Trouble accessing directory */
@@ -802,7 +804,7 @@ do_standby_clone(void)
 			        progname, tblspc_dir, strerror(errno));
 			PQclear(res);
 			PQfinish(conn);
-			return;
+			exit(1);
 		}
 	}
 
@@ -818,7 +820,7 @@ do_standby_clone(void)
 		fprintf(stderr, "Can't get info about data directory and configuration files: %s\n", PQerrorMessage(conn));
 		PQclear(res);
 		PQfinish(conn);
-		return;
+		exit(1);
 	}
 	for (i = 0; i < PQntuples(res); i++)
 	{
@@ -846,7 +848,7 @@ do_standby_clone(void)
 		fprintf(stderr, "Can't start backup: %s\n", PQerrorMessage(conn));
 		PQclear(res);
 		PQfinish(conn);
-		return;
+		exit(1);
 	}
 	first_wal_segment = PQgetvalue(res, 0, 0);
 	PQclear(res);
@@ -920,7 +922,7 @@ stop_backup:
 	{
 		fprintf(stderr, _("%s: could not connect to master\n"),
 		        progname);
-		return;
+		exit(1);
 	}
 
 	fprintf(stderr, "Finishing backup...\n");
@@ -932,7 +934,7 @@ stop_backup:
 		fprintf(stderr, "Can't stop backup: %s\n", PQerrorMessage(conn));
 		PQclear(res);
 		PQfinish(conn);
-		return;
+		exit(1);
 	}
 	last_wal_segment = PQgetvalue(res, 0, 0);
 	PQclear(res);
@@ -940,7 +942,7 @@ stop_backup:
 
 	/* Now, if the rsync failed then exit */
 	if (r != 0)
-		return;
+		exit(1);
 
 	if (verbose)
 		printf(_("%s requires primary to keep WAL files %s until at least %s\n"),
@@ -1004,14 +1006,14 @@ do_standby_promote(void)
 	{
 		PQfinish(conn);
 		fprintf(stderr, _("%s needs standby to be PostgreSQL 9.0 or better\n"), progname);
-		return;
+		exit(1);
 	}
 
 	/* Check we are in a standby node */
 	if (!is_standby(conn))
 	{
 		fprintf(stderr, "repmgr: The command should be executed in a standby node\n");
-		return;
+		exit(1);
 	}
 
 	/* we also need to check if there isn't any master already */
@@ -1020,7 +1022,7 @@ do_standby_promote(void)
 	{
 		PQfinish(old_master_conn);
 		fprintf(stderr, "There is a master already in this cluster");
-		return;
+		exit(1);
 	}
 
 	if (verbose)
@@ -1035,7 +1037,7 @@ do_standby_promote(void)
 		fprintf(stderr, "Can't get info about data directory: %s\n", PQerrorMessage(conn));
 		PQclear(res);
 		PQfinish(conn);
-		return;
+		exit(1);
 	}
 	strcpy(data_dir, PQgetvalue(res, 0, 0));
 	PQclear(res);
@@ -1051,7 +1053,7 @@ do_standby_promote(void)
 	if (r != 0)
 	{
 		fprintf(stderr, "Can't restart service\n");
-		return;
+		exit(1);
 	}
 
 	/* reconnect to check we got promoted */
@@ -1109,7 +1111,7 @@ do_standby_follow(void)
 	if (!is_standby(conn))
 	{
 		fprintf(stderr, "\n%s: The command should be executed in a standby node\n", progname);
-		return;
+		exit(1);
 	}
 
 	/* should be v9 or better */
@@ -1118,7 +1120,7 @@ do_standby_follow(void)
 	{
 		PQfinish(conn);
 		fprintf(stderr, _("\n%s needs standby to be PostgreSQL 9.0 or better\n"), progname);
-		return;
+		exit(1);
 	}
 
 	/* we also need to check if there is any master in the cluster */
@@ -1127,7 +1129,7 @@ do_standby_follow(void)
 	{
 		PQfinish(conn);
 		fprintf(stderr, "There isn't a master to follow in this cluster");
-		return;
+		exit(1);
 	}
 
 	/* Check we are going to point to a master */
@@ -1135,7 +1137,7 @@ do_standby_follow(void)
 	{
 		PQfinish(conn);
 		fprintf(stderr, "%s: The node to follow should be a master\n", progname);
-		return;
+		exit(1);
 	}
 
 	/* should be v9 or better */
@@ -1145,7 +1147,7 @@ do_standby_follow(void)
 		PQfinish(conn);
 		PQfinish(master_conn);
 		fprintf(stderr, _("%s needs master to be PostgreSQL 9.0 or better\n"), progname);
-		return;
+		exit(1);
 	}
 
 	/* master and standby version should match */
@@ -1155,7 +1157,7 @@ do_standby_follow(void)
 		PQfinish(master_conn);
 		fprintf(stderr, _("%s needs versions of both master (%s) and standby (%s) to match.\n"),
 		        progname, master_version, standby_version);
-		return;
+		exit(1);
 	}
 
 	/*
@@ -1181,7 +1183,7 @@ do_standby_follow(void)
 		fprintf(stderr, "Can't get info about data directory: %s\n", PQerrorMessage(conn));
 		PQclear(res);
 		PQfinish(conn);
-		return;
+		exit(1);
 	}
 	strcpy(data_dir, PQgetvalue(res, 0, 0));
 	PQclear(res);
@@ -1189,7 +1191,7 @@ do_standby_follow(void)
 
 	/* write the recovery.conf file */
 	if (!create_recovery_file(data_dir))
-		return;
+		exit(1);
 
 	/* Finally, restart the service */
 	/* We assume the pg_ctl script is in the PATH */
@@ -1198,7 +1200,7 @@ do_standby_follow(void)
 	if (r != 0)
 	{
 		fprintf(stderr, "Can't restart service\n");
-		return;
+		exit(1);
 	}
 
 	return;
