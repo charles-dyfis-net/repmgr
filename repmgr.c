@@ -955,13 +955,14 @@ stop_backup:
 	{
 		fprintf(stderr, _("%s: couldn't create directory %s, you will need to do it manually...\n"),
 		        progname, dest_dir);
+		r = 2; /* proceed, but exit with warning status */
 	}
 
 	/* Finally, write the recovery.conf file */
 	create_recovery_file(dest_dir);
 
 	/* We don't start the service because we still may want to move the directory */
-	return;
+	exit(r);
 }
 
 
