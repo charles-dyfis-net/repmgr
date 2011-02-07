@@ -229,7 +229,10 @@ MonitorExecute(void)
 		}
 		else
 		{
-			fprintf(stderr, "\n%s: Connection to master has been restored, continue monitoring.\n", progname);
+			if (connection_retries > 0)
+			{
+				fprintf(stderr, "\n%s: Connection to master has been restored, continue monitoring.\n", progname);
+			}
 			break;
 		}
 	}
