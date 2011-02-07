@@ -35,12 +35,12 @@ char    myClusterName[MAXLEN];
 /* Local info */
 int     myLocalMode = STANDBY_MODE;
 int     myLocalId   = -1;
-PGconn *myLocalConn;
+PGconn *myLocalConn = NULL;
 
 /* Primary info */
 int		primaryId;
 char	primaryConninfo[MAXLEN];
-PGconn *primaryConn;
+PGconn *primaryConn = NULL;
 
 char sqlquery[8192];
 
@@ -67,7 +67,7 @@ static void setup_cancel_handler(void);
 							CancelQuery(); \
 						if (myLocalConn != NULL) \
 							PQfinish(myLocalConn);	\
-						if (primaryConn != NULL) \
+						if (primaryConn != NULL && primaryConn != myLocalConn) \
 							PQfinish(primaryConn);
 
 /*
