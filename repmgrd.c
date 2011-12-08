@@ -67,6 +67,16 @@ bool	verbose = false;
 char	repmgr_schema[MAXLEN];
 
 /*
+ * when set, we can safely UPDATE
+ */
+bool only_one_entry = false;
+
+/*
+ * when set, we prefer to UPDATE rather than INSERTing new rows
+ */
+bool only_one_entry_desired = false;
+
+/*
  * should initialize with {0} to be ANSI complaint ? but this raises
  * error with gcc -Wall
  */
@@ -113,6 +123,7 @@ main(int argc, char **argv)
 	{
 		{"config", required_argument, NULL, 'f'},
 		{"verbose", no_argument, NULL, 'v'},
+		{"no-history", no_argument, NULL, 'H'},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -137,7 +148,7 @@ main(int argc, char **argv)
 		}
 	}
 
-	while ((c = getopt_long(argc, argv, "f:v", long_options, &optindex)) != -1)
+	while ((c = getopt_long(argc, argv, "f:vH", long_options, &optindex)) != -1)
 	{
 		switch (c)
 		{
@@ -146,6 +157,9 @@ main(int argc, char **argv)
 			break;
 		case 'v':
 			verbose = true;
+			break;
+		case 'H': /* no-history */
+			only_one_entry_desired = true;
 			break;
 		default:
 			usage();
@@ -406,6 +420,7 @@ StandbyMonitor(void)
 	char last_wal_primary_location[MAXLEN];
 	char last_wal_standby_received[MAXLEN];
 	char last_wal_standby_applied[MAXLEN];
+	char *impacted_tuples_s;
 
 	unsigned long long int lsn_primary;
 	unsigned long long int lsn_standby_received;
@@ -516,24 +531,97 @@ StandbyMonitor(void)
 	/*
 	 * Build the SQL to execute on primary
 	 */
-	sqlquery_snprintf(sqlquery,
-	                  "INSERT INTO %s.repl_monitor "
-	                  "VALUES(%d, %d, '%s'::timestamp with time zone, "
-	                  " '%s', '%s', "
-	                  " %lld, %lld)", repmgr_schema,
-	                  primary_options.node, local_options.node, monitor_standby_timestamp,
-	                  last_wal_primary_location,
-	                  last_wal_standby_received,
-	                  (lsn_primary - lsn_standby_received),
-	                  (lsn_standby_received - lsn_standby_applied));
+	if (only_one_entry && only_one_entry_desired)
+	{
+		sqlquery_snprintf(sqlquery,
+		                  "UPDATE %s.repl_monitor SET"
+		                  " last_monitor_time='%s'::timestamp with time zone,"
+		                  " last_wal_primary_location='%s',"
+		                  " last_wal_standby_location='%s',"
+		                  " replication_lag=%lld,"
+		                  " apply_lag=%lld"
+		                  " WHERE primary_node=%d AND standby_node=%d",
+		                  repmgr_schema,
+		                  monitor_standby_timestamp,
+		                  last_wal_primary_location,
+		                  last_wal_standby_received,
+		                  (lsn_primary - lsn_standby_received),
+		                  (lsn_standby_received - lsn_standby_applied),
+		                  primary_options.node, local_options.node);
+		res = PQexec(primaryConn, sqlquery);
+		if (PQresultStatus(res) != PGRES_COMMAND_OK)
+		{
+			log_err("PQexec failed (on UPDATE): %s\n", PQerrorMessage(primaryConn));
+			PQclear(res);
+			CloseConnections();
+			exit(ERR_DB_QUERY);
+		}
+		impacted_tuples_s = PQcmdTuples(res);
+		if (!(impacted_tuples_s != NULL &&
+		        impacted_tuples_s[0] == '1' &&
+		        impacted_tuples_s[1] == 0))
+		{
+			log_warning("Expected a single updated row; got %s;"
+			            " falling back to INSERT+DELETE\n", impacted_tuples_s);
+			only_one_entry = false;
+		}
+		PQclear(res);
+	}
+	else
+	{
+		sqlquery_snprintf(sqlquery,
+		                  "INSERT INTO %s.repl_monitor "
+		                  "VALUES(%d, %d, '%s'::timestamp with time zone, "
+		                  " '%s', '%s', "
+		                  " %lld, %lld)", repmgr_schema,
+		                  primary_options.node, local_options.node, monitor_standby_timestamp,
+		                  last_wal_primary_location,
+		                  last_wal_standby_received,
+		                  (lsn_primary - lsn_standby_received),
+		                  (lsn_standby_received - lsn_standby_applied));
 
-	/*
-	 * Execute the query asynchronously, but don't check for a result. We
-	 * will check the result next time we pause for a monitor step.
-	 */
-	if (PQsendQuery(primaryConn, sqlquery) == 0)
-		log_warning(_("Query could not be sent to primary. %s\n"),
-		            PQerrorMessage(primaryConn));
+		if (only_one_entry_desired)
+		{
+			res = PQexec(primaryConn, sqlquery);
+			if (PQresultStatus(res) != PGRES_TUPLES_OK)
+			{
+				log_err("PQexec failed: %s\n", PQerrorMessage(primaryConn));
+				PQclear(res);
+				CloseConnections();
+				exit(ERR_DB_QUERY);
+			}
+			PQclear(res);
+
+			sqlquery_snprintf(sqlquery,
+			                  "DELETE FROM %s.repl_monitor "
+			                  "WHERE primary_node=%d AND standby_node=%d AND last_monitor_time < '%s'::timestamp with time zone",
+			                  repmgr_schema, primary_options.node, local_options.node, monitor_standby_timestamp);
+			res = PQexec(primaryConn, sqlquery);
+			if (PQresultStatus(res) != PGRES_COMMAND_OK)
+			{
+				log_err("PQexec failed: %s\n", PQerrorMessage(primaryConn));
+				PQclear(res);
+				CloseConnections();
+				exit(ERR_DB_QUERY);
+			}
+			PQclear(res);
+			only_one_entry = true;
+		}
+	}
+
+	if (!only_one_entry_desired)
+	{
+		/*
+		 * Execute the query asynchronously, but don't check for a result. We
+		 * will check the result next time we pause for a monitor step.
+		 *
+		 * All code paths which do not pass through here must have already run
+		 * PQexec() and PQclear().
+		 */
+		if (PQsendQuery(primaryConn, sqlquery) == 0)
+			log_warning(_("Query could not be sent to primary. %s\n"),
+			            PQerrorMessage(primaryConn));
+	}
 }
 
 
@@ -900,6 +988,7 @@ void help(const char *progname)
 	printf(_("  --help                    show this help, then exit\n"));
 	printf(_("  --version                 output version information, then exit\n"));
 	printf(_("  --verbose                 output verbose activity information\n"));
+	printf(_("  -H, --no-history          do not store historical data\n"));
 	printf(_("  -f, --config_file=PATH    configuration file\n"));
 	printf(_("\n%s monitors a cluster of servers.\n"), progname);
 }
